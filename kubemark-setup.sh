@@ -55,9 +55,16 @@ function calc_gce_resource_params() {
 }
 calc_gce_resource_params ${KUBEMARK_NUM_NODES} || (echo "MUST specify KUBEMARK_NUM_NODES in one of supported values 1, 2, 100, 500, 10000"; return 3)
 
-# NUM_NODES not have effect in gce env
+# https://github.com/fabric8io/kansible/blob/master/vendor/k8s.io/kubernetes/docs/devel/kubemark-guide.md
+# ~17.5 hollow-node pods per cpu core ==> 16 cores: 110 hollow-nodes
+declare -x -i NUM_NODES=("${KUBEMARK_NUM_NODES}" + 110 -1)/110
+echo "${NUM_NODES} admin minion nodes"
+# export NUM_NODES="${NUM_NODES}"
+
 export SCALEOUT_CLUSTER=true
-export SCALEOUT_TP_COUNT=1
+export USE_INSECURE_SCALEOUT_CLUSTER_MODE=true		## insecure mode
+export SCALEOUT_TP_COUNT=1				## TP number
+export SCALEOUT_RP_COUNT=1				## RP number
 export KUBE_GCE_ZONE=${KUBE_GCE_ZONE-us-central1-b}
 export KUBE_GCE_ENABLE_IP_ALIASES=true
 export KUBE_GCE_PRIVATE_CLUSTER=true
@@ -77,25 +84,36 @@ export TEST_CLUSTER_LOG_LEVEL=--v=2
 export HOLLOW_KUBELET_TEST_LOG_LEVEL=--v=2
 export GOPATH=$HOME/go
 
-# ./cluster/kube-up.sh 
-# ./test/kubemark/start-kubemark.sh
+export SHARED_CA_DIRECTORY=/tmp/${USER}/ca
+mkdir -p ${SHARED_CA_DIRECTORY}
+
+date
+echo "starting admin cluster ..."
+./cluster/kube-up.sh
+echo "starting kubemark clusters ..."
+./test/kubemark/start-kubemark.sh
 
 # optional: sanity check
 
 # start perf tool
 export SCALEOUT_TEST_TENANT=arktos
 # create the test tenant in kubemark TP cluster
+./_output/dockerized/bin/linux/amd64/kubectl --kubeconfig=./test/kubemark/resources/kubeconfig.kubemark-proxy create tenant ${SCALEOUT_TEST_TENANT}
+
 export RUN_NAME=${RUN_PREFIX}
 export TENANT_PERF_LOG_DIR=~/logs/perf-test/gce-${KUBEMARK_NUM_NODES}/arktos/${RUN_NAME}/${SCALEOUT_TEST_TENANT}
 mkdir -p ${TENANT_PERF_LOG_DIR}
 
 date
 # start the density perf test
-# perf-tests/clusterloader2/run-e2e.sh --nodes=${KUBEMARK_NUM_NODES} --provider=kubemark --kubeconfig=test/kubemark/resources/kubeconfig.kubemark-proxy --report-dir=${TENANT_PERF_LOG_DIR} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml > ${TENANT_PERF_LOG_DIR}/perf-run.log  2>&1 &
+# ? do we need --delete-namespace=false ??
+echo "./perf-tests/clusterloader2/run-e2e.sh --nodes=${KUBEMARK_NUM_NODES} --provider=kubemark --kubeconfig=../../test/kubemark/resources/kubeconfig.kubemark-proxy --report-dir=${TENANT_PERF_LOG_DIR} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml > ${TENANT_PERF_LOG_DIR}/perf-run.log  2>&1 & "
+./perf-tests/clusterloader2/run-e2e.sh --nodes=${KUBEMARK_NUM_NODES} --provider=kubemark --kubeconfig=../../test/kubemark/resources/kubeconfig.kubemark-proxy --report-dir=${TENANT_PERF_LOG_DIR} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml > ${TENANT_PERF_LOG_DIR}/perf-run.log  2>&1 &
 
 test_job=$!
-wait test_job || { echo "failed to start density test!. Aborting..."; return 4 }
+wait ${test_job} || ( echo "failed to start density test!. Aborting..."; return 4 )
 
+return 111
 date
 echo "shuting down kubemark clusters ..."
 ./test/kubemark/stop-kubemark.sh 
