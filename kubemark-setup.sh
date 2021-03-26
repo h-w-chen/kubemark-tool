@@ -1,11 +1,15 @@
 #!/bin/bash
 # Credit: this script is based on https://github.com/sonyafenge/arktos-tool/blob/master/perftools/Howtorunperf-tests-scaleout.md
-# purpose: to perf test scale-out 1TP/1RP system
+# purpose: to perf test scale-out 1TP/1RP system / scale-up (single cluster) system
 # this script is supposed to be sourced.
 # todo: add multi TP/multi RP
 
 [[ -z $1 ]] && echo "MUST specify RUN_PREFIX in format like etcd343-0312-1x500" && return 1
 [[ -z $2 ]] && echo "MUST specify KUBEMARK_NUM_NODES in one of supported values 1, 2, 10, 500, 10000" && return 2
+
+export SCALEOUT_CLUSTER=true
+[[ "$3" == "scale-up" ]] && { echo "Run in scale-up (not scale-out) mode instead."; unset SCALEOUT_CLUSTER; }
+return 0;
 
 export RUN_PREFIX=$1
 export KUBEMARK_NUM_NODES=$2
@@ -30,7 +34,7 @@ function calc_gce_resource_params() {
   10)
   export MASTER_DISK_SIZE=200GB 
   export MASTER_ROOT_DISK_SIZE=200GB
-  export MASTER_SIZE=n1-highmem-16
+  export MASTER_SIZE=n1-standard-4
   export NODE_SIZE=n1-highmem-16
   export NODE_DISK_SIZE=200GB
   ;;
@@ -61,10 +65,8 @@ calc_gce_resource_params ${KUBEMARK_NUM_NODES} || (echo "MUST specify KUBEMARK_N
 echo "${NUM_NODES} admin minion nodes"
 #declare -x -i NUM_NODES=("${KUBEMARK_NUM_NODES}" + 110 -1)/110
 declare -x -i NUM_NODES=("${KUBEMARK_NUM_NODES}" + 100 - 1)/100		## arktos team experience; may consider give 1 nuffer in case of 100/500
-# export NUM_NODES="${NUM_NODES}"
 
-export SCALEOUT_CLUSTER=true
-export USE_INSECURE_SCALEOUT_CLUSTER_MODE=true		## insecure mode
+export USE_INSECURE_SCALEOUT_CLUSTER_MODE=false		## better avoid insecure mode currently buggy?
 export SCALEOUT_TP_COUNT=1				## TP number
 export SCALEOUT_RP_COUNT=1				## RP number
 export CREATE_CUSTOM_NETWORK=true			## gce env isolaation
@@ -96,6 +98,13 @@ mkdir -p ${SHARED_CA_DIRECTORY}
 date
 echo "starting admin cluster ..."
 ./cluster/kube-up.sh
+is_kube_up=$?
+if [[ "${is_kube_up}" == "1" ]]; then
+    return 5
+else [[ "${is_kube_up}" == "2" ]]; then
+    echo "waring: fine to continue"
+fi
+
 echo "starting kubemark clusters ..."
 ./test/kubemark/start-kubemark.sh
 
@@ -120,7 +129,6 @@ echo "./perf-tests/clusterloader2/run-e2e.sh --nodes=${KUBEMARK_NUM_NODES} --pro
 test_job=$!
 wait ${test_job} || ( echo "failed to start density test!. Aborting..."; return 4 )
 
-return 111
 date
 echo "shuting down kubemark clusters ..."
 ./test/kubemark/stop-kubemark.sh 
