@@ -132,6 +132,8 @@ wait ${test_job} || ( echo "failed to start density test. Aborting..."; return 4
 echo "collecting logs..."
 pushd ${TENANT_PERF_LOG_DIR}/..
 env GCE_REGION=${KUBE_GCE_ZONE} bash ~/arktos-tool/logcollection/logcollection.sh
+## rough check of log
+wc -l minion-*/kubelet.logs || (echo "log data seems incomplete. Aborting..."; return 5;)
 popd
 
 date
