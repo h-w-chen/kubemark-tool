@@ -5,11 +5,10 @@
 # todo: add multi TP/multi RP
 
 [[ -z $1 ]] && echo "MUST specify RUN_PREFIX in format like etcd343-0312-1x500" && return 1
-[[ -z $2 ]] && echo "MUST specify KUBEMARK_NUM_NODES in one of supported values 1, 2, 10, 500, 10000" && return 2
+[[ -z $2 ]] && echo "MUST specify KUBEMARK_NUM_NODES in one of supported values 1, 2, 100, 500, 10000" && return 2
 
 export SCALEOUT_CLUSTER=true
 [[ "$3" == "scale-up" ]] && { echo "Run in scale-up (not scale-out) mode instead."; unset SCALEOUT_CLUSTER; }
-return 0;
 
 export RUN_PREFIX=$1
 export KUBEMARK_NUM_NODES=$2
@@ -31,10 +30,10 @@ function calc_gce_resource_params() {
   export NODE_SIZE=n1-standard-4
   export NODE_DISK_SIZE=200GB
   ;;
-  10)
+  100)
   export MASTER_DISK_SIZE=200GB 
   export MASTER_ROOT_DISK_SIZE=200GB
-  export MASTER_SIZE=n1-standard-4
+  export MASTER_SIZE=n1-standard-8
   export NODE_SIZE=n1-highmem-16
   export NODE_DISK_SIZE=200GB
   ;;
@@ -58,13 +57,14 @@ function calc_gce_resource_params() {
   ;;
   esac
 }
-calc_gce_resource_params ${KUBEMARK_NUM_NODES} || (echo "MUST specify KUBEMARK_NUM_NODES in one of supported values 1, 2, 10, 500, 10000"; return 3)
+calc_gce_resource_params ${KUBEMARK_NUM_NODES} || (echo "MUST specify KUBEMARK_NUM_NODES in one of supported values 1, 2, 100, 500, 10000"; return 3)
 
 # https://github.com/fabric8io/kansible/blob/master/vendor/k8s.io/kubernetes/docs/devel/kubemark-guide.md
 # ~17.5 hollow-node pods per cpu core ==> 16 cores: 110 hollow-nodes
 echo "${NUM_NODES} admin minion nodes"
 #declare -x -i NUM_NODES=("${KUBEMARK_NUM_NODES}" + 110 -1)/110
 declare -x -i NUM_NODES=("${KUBEMARK_NUM_NODES}" + 100 - 1)/100		## arktos team experience; may consider give 1 nuffer in case of 100/500
+[[ "${KUBEMARK_NUM_NODES}" == "100" ]] && NUM_NODES=2
 
 export USE_INSECURE_SCALEOUT_CLUSTER_MODE=false		## better avoid insecure mode currently buggy?
 export SCALEOUT_TP_COUNT=1				## TP number
@@ -101,7 +101,7 @@ echo "starting admin cluster ..."
 is_kube_up=$?
 if [[ "${is_kube_up}" == "1" ]]; then
     return 5
-else [[ "${is_kube_up}" == "2" ]]; then
+elif [[ "${is_kube_up}" == "2" ]]; then
     echo "waring: fine to continue"
 fi
 
@@ -127,7 +127,12 @@ echo "./perf-tests/clusterloader2/run-e2e.sh --nodes=${KUBEMARK_NUM_NODES} --pro
 ./perf-tests/clusterloader2/run-e2e.sh --nodes=${KUBEMARK_NUM_NODES} --provider=kubemark --kubeconfig=../../test/kubemark/resources/kubeconfig.kubemark-proxy --report-dir=${TENANT_PERF_LOG_DIR} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml > ${TENANT_PERF_LOG_DIR}/perf-run.log  2>&1 &
 
 test_job=$!
-wait ${test_job} || ( echo "failed to start density test!. Aborting..."; return 4 )
+wait ${test_job} || ( echo "failed to start density test. Aborting..."; return 4 )
+
+echo "collecting logs..."
+pushd ${TENANT_PERF_LOG_DIR}/..
+env GCE_REGION=${KUBE_GCE_ZONE} bash ~/arktos-tool/logcollection/logcollection.sh
+popd
 
 date
 echo "shuting down kubemark clusters ..."
