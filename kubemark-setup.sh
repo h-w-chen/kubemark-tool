@@ -1,6 +1,6 @@
 #!/bin/bash
 # Credit: this script is based on https://github.com/sonyafenge/arktos-tool/blob/master/perftools/Howtorunperf-tests-scaleout.md
-# purpose: to perf test scale-out nTP/nRP system / scale-up (single cluster) system
+# purpose: to perf test scale-out mTP/nRP system / scale-up (single cluster) system
 # this script is supposed to be sourced.
 # todo: add multi TP/multi RP
 
@@ -9,10 +9,13 @@
 [[ -z $2 ]] && echo "MUST specify KUBEMARK_NUM_NODES in one of supported values 1, 2, 100, 500, 10000" && return 2
 
 export SCALEOUT_CLUSTER=true
-declare -i replicas=${3:-1}
-[[ $replicas -eq 0 ]] && { echo "Run in scale-up (not scale-out) mode instead."; unset SCALEOUT_CLUSTER; }
+declare -i tp_reps=${3:-1}
+[[ $tp_reps -eq 0 ]] && { echo "Run in scale-up (not scale-out) mode instead."; unset SCALEOUT_CLUSTER; }
 
-case $replicas in
+declare -i rp_reps=${4:-${tp_reps}}
+echo "run ${1}: tp ${tp_reps}; rp ${rp_reps}, each rp has hollow nodes: ${2}"
+
+case $tp_reps in
   0) ;;
   1)
   tenants=("" "arktos")
@@ -20,8 +23,11 @@ case $replicas in
   2)
   tenants=("" "arktos" "zeta")
   ;;
+  3)
+  tenants=("" "arktos" "mercury" "zeta")
+  ;;
   *)
-  echo "not supported replicas."
+  echo "not supported tp_reps."
   return -1;
 esac
 
@@ -68,7 +74,7 @@ function calc_gce_resource_params() {
   esac
 }
 
-declare -i total_hollow_nodes=(${replicas}*${KUBEMARK_NUM_NODES})
+declare -i total_hollow_nodes=(${rp_reps}*${KUBEMARK_NUM_NODES})
 calc_gce_resource_params ${total_hollow_nodes} || (echo "MUST specify KUBEMARK_NUM_NODES in one of supported values 1, 2, 100, 500, 10000"; return 3)
 
 # https://github.com/fabric8io/kansible/blob/master/vendor/k8s.io/kubernetes/docs/devel/kubemark-guide.md
@@ -80,13 +86,13 @@ declare -x -i NUM_NODES=("${total_hollow_nodes}" + 100 - 1)/100		## arktos team 
 echo "${NUM_NODES} admin minion nodes, total hollow nodes ${total_hollow_nodes}"
 
 export USE_INSECURE_SCALEOUT_CLUSTER_MODE=false		## better avoid insecure mode currently buggy?
-export SCALEOUT_TP_COUNT=${replicas}			## TP number
-export SCALEOUT_RP_COUNT=${replicas}			## RP number
+export SCALEOUT_TP_COUNT=${tp_reps}			## TP number
+export SCALEOUT_RP_COUNT=${rp_reps}			## RP number
 export CREATE_CUSTOM_NETWORK=true			## gce env isolaation
 export KUBE_GCE_PRIVATE_CLUSTER=true
 export KUBE_GCE_ENABLE_IP_ALIASES=true
 export KUBE_GCE_NETWORK=${RUN_PREFIX}
-export KUBE_GCE_INSTANCE_PREFIX=${RUN_PREFIX}
+export KUBE_GCE_INSTANCE_PREFIX=${RUN_PREFIX}		## for kube-up/down to identify GCP resources
 export KUBE_GCE_ZONE=${KUBE_GCE_ZONE-us-central1-b}
 
 export ENABLE_KCM_LEADER_ELECT=false
@@ -138,21 +144,30 @@ function start_perf_test() {
   # create the test tenant in kubemark TP cluster
   ./_output/dockerized/bin/linux/amd64/kubectl --kubeconfig=${kube_config} create tenant ${tenant}
 
-  # notes - TBD: for T TP/R RP case, --nodes must be adjusted.
   # ? do we need --delete-namespace=false ??
-  echo env SCALEOUT_TEST_TENANT=${tenant} ./perf-tests/clusterloader2/run-e2e.sh --nodes=${KUBEMARK_NUM_NODES} --provider=kubemark --kubeconfig=${kube_config_proxy} --report-dir=${perf_log_folder} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml > ${perf_log_folder}/perf-run.log
-  env SCALEOUT_TEST_TENANT=${tenant} ./perf-tests/clusterloader2/run-e2e.sh --nodes=${KUBEMARK_NUM_NODES} --provider=kubemark --kubeconfig=${kube_config_proxy} --report-dir=${perf_log_folder} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml > ${perf_log_folder}/perf-run.log  2>&1 &
+  declare -i nodes=${KUBEMARK_NUM_NODES}
+  if [[ ${tp_reps} -ne 0 ]]; then # scale-out multi-tp/rp cluster
+	  nodes=(${total_hollow_nodes}/${tp_reps}+99)/100*100
+  fi
+
+  echo env SCALEOUT_TEST_TENANT=${tenant} ./perf-tests/clusterloader2/run-e2e.sh --nodes=${nodes} --provider=kubemark --kubeconfig=${kube_config_proxy} --report-dir=${perf_log_folder} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml > ${perf_log_folder}/perf-run.log
+  env SCALEOUT_TEST_TENANT=${tenant} ./perf-tests/clusterloader2/run-e2e.sh --nodes=${nodes} --provider=kubemark --kubeconfig=${kube_config_proxy} --report-dir=${perf_log_folder} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml > ${perf_log_folder}/perf-run.log  2>&1 &
   test_job=$!
   test_jobs+=($test_job)
 }
 
-for t in $(seq 1 $replicas); do
+for t in $(seq 1 $tp_reps); do
   start_perf_test ${tenants[$t]} $PWD/test/kubemark/resources/kubeconfig.kubemark.tp-${t} 
 done
 
+if [[ $tp_reps -eq 0 ]]; then #non scale-out; single master for all
+  start_perf_test ${tenants[$t]} $PWD/test/kubemark/resources/kubeconfig.kubemark.tp
+fi
+
 echo "waiting for perf test suites done..."
-for t in $(seq 1 $replicas); do
-  wait ${test_jobs[$t]} || ( echo "failed to start density test. Aborting..."; return 4 )
+echo "background jobs: ${test_jobs[@]}"
+for t in ${test_jobs[@]}; do
+  wait $t || ( echo "failed to start density test. Aborting..."; return 4 )
 done
 
 echo "collecting logs..."
@@ -168,5 +183,5 @@ echo "shuting down kubemark clusters ..."
 ./test/kubemark/stop-kubemark.sh 
 echo "tearing down admin cluster ..."
 ./cluster/kube-down.sh
-echo "system cleans up. Au revoir :)"
+echo "system has been cleaned up. Au revoir :)"
 date

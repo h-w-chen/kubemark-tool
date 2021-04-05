@@ -18,8 +18,9 @@ Usually the community ETCD is preferrable, whose patch is right now in out-of-tr
 ## How to use it
 It applies to Arktos project purposedly.
 
+1. ensure arktos-tool/ is at ~/ (may need to run git clone https://sonyafenge@github.com/sonyafenge/arktos-tool.git)
 1. create symbolic link to the shell script at <ARKTOS-REPO-ROOT>
 1. assuming make quick-release has been done;
-1. source ./kubemar-setup.sh hw-density-1x100 100 (typically takes 50 minutes to finish the specific one)
+1. source ./kubemark-setup.sh hw-density-1x100 100 2 3 (2tpx3rp, typically takes 80 minutes to finish the specific one)
 
 Enjoy!
