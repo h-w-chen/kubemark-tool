@@ -2,7 +2,7 @@
 # Credit: this script is based on https://github.com/sonyafenge/arktos-tool/blob/master/perftools/Howtorunperf-tests-scaleout.md
 # purpose: to perf test scale-out mTP/nRP system / scale-up (single cluster) system
 # this script is supposed to be sourced.
-# todo: add multi TP/multi RP
+# usage: . <script> <run-name> <hollow-nodes-per-rp> <tp-num> <rp-num>
 
 [[ -z $1 ]] && echo "MUST specify RUN_PREFIX in format like etcd343-0312-1x500" && return 1
 ## KUBEMARK_NUM_NODES is the hollow nodes of ONE RP only; the total nodes are n * KUBEMARK_NUM_NODES
@@ -114,8 +114,8 @@ export KUBE_FEATURE_GATES=ExperimentalCriticalPodAnnotation=true,QPSDoubleGCCont
 export SHARED_CA_DIRECTORY=/tmp/${USER}/ca
 mkdir -p ${SHARED_CA_DIRECTORY}
 
-date
-echo "starting admin cluster ..."
+echo "------------------------------------------"
+echo "step 1. starting admin cluster ... $(date)"
 ./cluster/kube-up.sh
 is_kube_up=$?
 if [[ "${is_kube_up}" == "1" ]]; then
@@ -124,7 +124,8 @@ elif [[ "${is_kube_up}" == "2" ]]; then
     echo "waring: fine to continue"
 fi
 
-echo "starting kubemark clusters ..."
+echo "------------------------------------------"
+echo "step 2: starting kubemark clusters ... $(date)"
 ./test/kubemark/start-kubemark.sh
 
 # optional: sanity check
@@ -156,6 +157,8 @@ function start_perf_test() {
   test_jobs+=($test_job)
 }
 
+echo "------------------------------------------"
+echo "step 3: run perf test suite per tp ... $(date)"
 for t in $(seq 1 $tp_reps); do
   start_perf_test ${tenants[$t]} $PWD/test/kubemark/resources/kubeconfig.kubemark.tp-${t} 
 done
@@ -170,7 +173,8 @@ for t in ${test_jobs[@]}; do
   wait $t || ( echo "failed to start density test. Aborting..."; return 4 )
 done
 
-echo "collecting logs..."
+echo "------------------------------------------"
+echo "step 4: per test suites are done; collecting logs ... $(date)"
 pushd ${perf_log_root}
 env GCE_REGION=${KUBE_GCE_ZONE} bash ~/arktos-tool/logcollection/logcollection.sh
 ## rough check of log
@@ -178,10 +182,11 @@ env GCE_REGION=${KUBE_GCE_ZONE} bash ~/arktos-tool/logcollection/logcollection.s
 wc -l minion-*/kubelet.logs || (echo "log data seems incomplete. Aborting..."; return 5;)
 popd
 
-date
-echo "shuting down kubemark clusters ..."
+echo "------------------------------------------"
+echo "step 5: shuting down kubemark clusters ... $(date)"
 ./test/kubemark/stop-kubemark.sh 
-echo "tearing down admin cluster ..."
+echo "------------------------------------------"
+echo "step 6: tearing down admin cluster ... $(date)"
 ./cluster/kube-down.sh
-echo "system has been cleaned up. Au revoir :)"
-date
+echo "------------------------------------------"
+echo "step 7: system has been cleaned up. Au revoir :) $(date)"
