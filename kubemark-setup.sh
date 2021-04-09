@@ -87,7 +87,7 @@ declare -x -i NUM_NODES=("${total_hollow_nodes}" + 100 - 1)/100		## arktos team 
 [[ ${total_hollow_nodes} -lt 499 ]] && NUM_NODES=${NUM_NODES}+1
 
 echo "${NUM_NODES} admin minion nodes, total hollow nodes ${total_hollow_nodes}"
-export PREEMPTIBLE_NODE=true
+export PREEMPTIBLE_NODE=${PREEMPTIBLE_NODE:-true}
 export USE_INSECURE_SCALEOUT_CLUSTER_MODE=false		## better avoid insecure mode currently buggy?
 export SCALEOUT_TP_COUNT=${tp_reps}			## TP number
 export SCALEOUT_RP_COUNT=${rp_reps}			## RP number
@@ -190,7 +190,7 @@ echo "------------------------------------------"
 echo "step 5: cleaning up GCP test resources ... $(date)"
 SCRIPT=$(realpath -P ./kubemark-setup.sh)
 SCRIPTPATH=`dirname $SCRIPT`
-bash ${SCRIPTPATH}/kubemark_clean_up.sh ${RUN_ID}
+bash ${SCRIPTPATH}/gcp-cleanup.sh ${RUN_ID}
 echo "------------------------------------------"
 echo "step 6: system has been cleaned up. Au revoir :) $(date)"
 return 0
