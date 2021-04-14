@@ -116,10 +116,10 @@ export KUBE_FEATURE_GATES=ExperimentalCriticalPodAnnotation=true,QPSDoubleGCCont
 ## below controls KCM + sched QPS; use them in caution
 export KUBE_CONTROLLER_EXTRA_ARGS="--kube-api-qps=100 --kube-api-burst=150"
 export KUBE_SCHEDULER_EXTRA_ARGS="--kube-api-qps=200 --kube-api-burst=300"
+export KUBE_APISERVER_EXTRA_ARGS="--max-mutating-requests-inflight=20000 --max-requests-inflight=40000"
 ## more general args for master components; keep here for reference
 #KUBE_CONTROLLER_EXTRA_ARGS=" --kube-api-qps=2000 --kube-api-burst=4000 --concurrent-deployment-syncs=500 --concurrent-replicaset-syncs=500 --concurrent_rc_syncs=500 --concurrent-endpoint-syncs=500 --concurrent-gc-syncs=2000 --concurrent-namespace-syncs=1000 --concurrent-resource-quota-syncs=500 --concurrent-service-syncs=100 --concurrent-serviceaccount-token-syncs=500 --concurrent-ttl-after-finished-syncs=500"
 #KUBE_SCHEDULER_EXTRA_ARGS=" --kube-api-qps=2000 --kube-api-burst=4000"
-# api server: "--max-mutating-requests-inflight=20000 --max-requests-inflight=40000"
 
 export SHARED_CA_DIRECTORY=/tmp/${USER}/ca
 mkdir -p ${SHARED_CA_DIRECTORY}
