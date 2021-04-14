@@ -112,7 +112,7 @@ export HOLLOW_KUBELET_TEST_LOG_LEVEL=--v=2
 export GOPATH=$HOME/go
 
 ## for perf test only - speed up deleting pods (by doubling GC controller QPS)
-export KUBE_FEATURE_GATES=ExperimentalCriticalPodAnnotation=true,QPSDoubleGCController=true,QPSDoubleRSController=true
+export KUBE_FEATURE_GATES=ExperimentalCriticalPodAnnotation=true,QPSDoubleGCController=true #,QPSDoubleRSController=true
 ## below controls KCM + sched QPS; use them in caution
 export KUBE_CONTROLLER_EXTRA_ARGS="--kube-api-qps=100 --kube-api-burst=150"
 export KUBE_SCHEDULER_EXTRA_ARGS="--kube-api-qps=200 --kube-api-burst=300"
