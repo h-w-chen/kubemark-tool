@@ -6,7 +6,7 @@
 
 [[ -z $1 ]] && echo "MUST specify RUN_PREFIX in format like etcd343-0312-1x500" && return 1
 ## KUBEMARK_NUM_NODES is the hollow nodes of ONE RP only; the total nodes are n * KUBEMARK_NUM_NODES
-[[ -z $2 ]] && echo "MUST specify KUBEMARK_NUM_NODES in one of supported values 1, 2, 100, 500, 10000" && return 2
+[[ -z $2 ]] && echo "MUST specify KUBEMARK_NUM_NODES in one of supported values 1, 2, 100, 500, 1000, 10000" && return 2
 
 export SCALEOUT_CLUSTER=true
 declare -i tp_reps=${3:-1}
@@ -63,6 +63,13 @@ function calc_gce_resource_params() {
   export NODE_SIZE=n1-highmem-16
   export NODE_DISK_SIZE=200GB
   ;;
+  1000)
+  export MASTER_DISK_SIZE=200GB
+  export MASTER_ROOT_DISK_SIZE=200GB
+  export MASTER_SIZE=n1-highmem-32
+  export NODE_SIZE=n1-highmem-16
+  export NODE_DISK_SIZE=200GB
+  ;;
   10000)
   export MASTER_DISK_SIZE=1000GB 
   export MASTER_ROOT_DISK_SIZE=1000GB
@@ -78,7 +85,11 @@ function calc_gce_resource_params() {
 }
 
 declare -i total_hollow_nodes=(${rp_reps}*${KUBEMARK_NUM_NODES})
-calc_gce_resource_params ${total_hollow_nodes} || (echo "MUST specify KUBEMARK_NUM_NODES in one of supported values 1, 2, 100, 500, 10000"; return 3)
+calc_gce_resource_params ${total_hollow_nodes}
+if [[ $? -ne 0 ]]; then
+	echo "MUST specify KUBEMARK_NUM_NODES in one of supported values 1, 2, 100, 500, 1000, 10000"
+	return 3
+fi
 
 # https://github.com/fabric8io/kansible/blob/master/vendor/k8s.io/kubernetes/docs/devel/kubemark-guide.md
 # ~17.5 hollow-node pods per cpu core ==> 16 cores: 110 hollow-nodes
@@ -162,13 +173,14 @@ function start_perf_test() {
 	  nodes=(${total_hollow_nodes}/${tp_reps}+99)/100*100
   fi
 
-  echo env SCALEOUT_TEST_TENANT=${tenant} ./perf-tests/clusterloader2/run-e2e.sh --nodes=${nodes} --provider=kubemark --kubeconfig=${kube_config_proxy} --report-dir=${perf_log_folder} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml > ${perf_log_folder}/perf-run.log
+  echo env SCALEOUT_TEST_TENANT=${tenant} ./perf-tests/clusterloader2/run-e2e.sh --nodes=${nodes} --provider=kubemark --kubeconfig=${kube_config_proxy} --report-dir=${perf_log_folder} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml
   env SCALEOUT_TEST_TENANT=${tenant} ./perf-tests/clusterloader2/run-e2e.sh --nodes=${nodes} --provider=kubemark --kubeconfig=${kube_config_proxy} --report-dir=${perf_log_folder} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml > ${perf_log_folder}/perf-run.log  2>&1 &
   test_job=$!
   test_jobs+=($test_job)
 }
 
 echo "------------------------------------------"
+#return 0
 echo "step 3: run perf test suite per tp ... $(date)"
 for t in $(seq 1 $tp_reps); do
   start_perf_test ${tenants[$t]} $PWD/test/kubemark/resources/kubeconfig.kubemark.tp-${t} 
@@ -185,6 +197,8 @@ for t in ${test_jobs[@]}; do
 done
 
 echo "------------------------------------------"
+#return 0 ## to uncomment it in local controlled run
+
 echo "step 4: per test suites are done; collecting logs ... $(date)"
 pushd ${perf_log_root}
 env GCE_REGION=${KUBE_GCE_ZONE} bash ~/arktos-tool/logcollection/logcollection.sh
@@ -200,7 +214,7 @@ SCRIPTPATH=`dirname $SCRIPT`
 bash ${SCRIPTPATH}/gcp-cleanup.sh ${RUN_ID}
 echo "------------------------------------------"
 echo "step 6: system has been cleaned up. Au revoir :) $(date)"
-return 0
+#return 0
 
 #echo "------------------------------------------"
 #echo "step 5: shuting down kubemark clusters ... $(date)"
@@ -210,3 +224,7 @@ return 0
 #./cluster/kube-down.sh
 #echo "------------------------------------------"
 #echo "step 7: system has been cleaned up. Au revoir :) $(date)"
+
+echo "local cleanup of kubemark-config files"
+rm test/kubemark/resources/kubeconfig.*
+
