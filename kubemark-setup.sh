@@ -2,7 +2,9 @@
 # Credit: this script is based on https://github.com/sonyafenge/arktos-tool/blob/master/perftools/Howtorunperf-tests-scaleout.md
 # purpose: to perf test scale-out mTP/nRP system / scale-up (single cluster) system
 # this script is supposed to be sourced.
-# usage: . <script> <run-name> <hollow-nodes-per-rp> <tp-num> <rp-num>
+# usage:
+#        export TEST_TYPE=load #default to density
+#        . <script> <run-name> <hollow-nodes-per-rp> <tp-num> <rp-num>
 
 [[ -z $1 ]] && echo "MUST specify RUN_PREFIX in format like etcd343-0312-1x500" && return 1
 ## KUBEMARK_NUM_NODES is the hollow nodes of ONE RP only; the total nodes are n * KUBEMARK_NUM_NODES
@@ -158,6 +160,7 @@ perf_log_root=$HOME/logs/perf-test/gce-${total_hollow_nodes}/arktos/${RUN_PREFIX
 function start_perf_test() {
   local tenant=$1
   local kube_config=$2
+  local test_type=${TEST_TYPE:-density}
   ## todo: change clusterload code to fix the rp access bug
   local kube_config_proxy=$PWD/test/kubemark/resources/kubeconfig.kubemark-proxy
   perf_log_folder="${perf_log_root}/${tenant}"
@@ -173,14 +176,13 @@ function start_perf_test() {
 	  nodes=(${total_hollow_nodes}/${tp_reps}+99)/100*100
   fi
 
-  echo env SCALEOUT_TEST_TENANT=${tenant} ./perf-tests/clusterloader2/run-e2e.sh --nodes=${nodes} --provider=kubemark --kubeconfig=${kube_config_proxy} --report-dir=${perf_log_folder} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml
-  env SCALEOUT_TEST_TENANT=${tenant} ./perf-tests/clusterloader2/run-e2e.sh --nodes=${nodes} --provider=kubemark --kubeconfig=${kube_config_proxy} --report-dir=${perf_log_folder} --testconfig=testing/density/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml > ${perf_log_folder}/perf-run.log  2>&1 &
+  echo env SCALEOUT_TEST_TENANT=${tenant} ./perf-tests/clusterloader2/run-e2e.sh --nodes=${nodes} --provider=kubemark --kubeconfig=${kube_config_proxy} --report-dir=${perf_log_folder} --testconfig=testing/${test_type}/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml
+  env SCALEOUT_TEST_TENANT=${tenant} ./perf-tests/clusterloader2/run-e2e.sh --nodes=${nodes} --provider=kubemark --kubeconfig=${kube_config_proxy} --report-dir=${perf_log_folder} --testconfig=testing/${test_type}/config.yaml --testoverrides=./testing/experiments/disable_pvs.yaml > ${perf_log_folder}/perf-run.log  2>&1 &
   test_job=$!
   test_jobs+=($test_job)
 }
 
 echo "------------------------------------------"
-#return 0
 echo "step 3: run perf test suite per tp ... $(date)"
 for t in $(seq 1 $tp_reps); do
   start_perf_test ${tenants[$t]} $PWD/test/kubemark/resources/kubeconfig.kubemark.tp-${t} 
@@ -214,7 +216,6 @@ SCRIPTPATH=`dirname $SCRIPT`
 bash ${SCRIPTPATH}/gcp-cleanup.sh ${RUN_ID}
 echo "------------------------------------------"
 echo "step 6: system has been cleaned up. Au revoir :) $(date)"
-#return 0
 
 #echo "------------------------------------------"
 #echo "step 5: shuting down kubemark clusters ... $(date)"
