@@ -3,6 +3,7 @@
 # purpose: to perf test scale-out mTP/nRP system / scale-up (single cluster) system
 # this script is supposed to be sourced.
 # usage:
+#        export TEST_SINGLE_STEP=N  # by default not set; run all steps
 #        export TEST_TYPE=load #default to density
 #        . <script> <run-name> <hollow-nodes-per-rp> <tp-num> <rp-num>
 
@@ -65,7 +66,7 @@ function calc_gce_resource_params() {
   export NODE_SIZE=n1-highmem-16
   export NODE_DISK_SIZE=200GB
   ;;
-  1000)
+  [1-2]000)
   export MASTER_DISK_SIZE=200GB
   export MASTER_ROOT_DISK_SIZE=200GB
   export MASTER_SIZE=n1-highmem-32
@@ -80,7 +81,7 @@ function calc_gce_resource_params() {
   export NODE_DISK_SIZE=200GB    ## seems wastful if asking for 1GB disk for node"
   ;;
   *)
-  echo "invalid KUBEMARK_NUM_NODES."
+  echo "invalid KUBEMARK_NUM_NODES of ${size}."
   return -1
   ;;
   esac
@@ -137,9 +138,14 @@ export KUBE_APISERVER_EXTRA_ARGS="--max-mutating-requests-inflight=20000 --max-r
 export SHARED_CA_DIRECTORY=/tmp/${USER}/ca
 mkdir -p ${SHARED_CA_DIRECTORY}
 
+if [[ -z ${TEST_SINGLE_STEP} ]] || [[ ${TEST_SINGLE_STEP} == "1" ]]; then
 echo "------------------------------------------"
 echo "step 1. starting admin cluster ... $(date)"
 ./cluster/kube-up.sh
+fi
+if [[ ${TEST_SINGLE_STEP} == "1" ]]; then
+	return 0
+fi
 
 is_kube_up=$?
 if [[ "${is_kube_up}" == "1" ]]; then
@@ -148,9 +154,14 @@ elif [[ "${is_kube_up}" == "2" ]]; then
     echo "waring: fine to continue"
 fi
 
+if [[ -z ${TEST_SINGLE_STEP} ]] || [[ ${TEST_SINGLE_STEP} == "2" ]]; then
 echo "------------------------------------------"
 echo "step 2: starting kubemark clusters ... $(date)"
 ./test/kubemark/start-kubemark.sh
+fi
+if [[ ${TEST_SINGLE_STEP} == "2" ]]; then
+	return 0
+fi
 
 # optional: sanity check
 
@@ -182,6 +193,7 @@ function start_perf_test() {
   test_jobs+=($test_job)
 }
 
+if [[ -z ${TEST_SINGLE_STEP} ]] || [[ ${TEST_SINGLE_STEP} == "3" ]]; then
 echo "------------------------------------------"
 echo "step 3: run perf test suite per tp ... $(date)"
 for t in $(seq 1 $tp_reps); do
@@ -197,7 +209,12 @@ echo "background jobs: ${test_jobs[@]}"
 for t in ${test_jobs[@]}; do
   wait $t || ( echo "failed to start density test. Aborting..."; return 4 )
 done
+fi
+if [[ ${TEST_SINGLE_STEP} == "3" ]]; then
+	return 0
+fi
 
+if [[ -z ${TEST_SINGLE_STEP} ]] || [[ ${TEST_SINGLE_STEP} == "4" ]]; then
 echo "------------------------------------------"
 #return 0 ## to uncomment it in local controlled run
 
@@ -208,12 +225,23 @@ env GCE_REGION=${KUBE_GCE_ZONE} bash ~/arktos-tool/logcollection/logcollection.s
 ### find . -name "minion-*" -type d | xargs -I{} wc -l {}/kubelet.log
 wc -l minion-*/kubelet.logs || (echo "log data seems incomplete. Aborting..."; return 5;)
 popd
+fi
+if [[ ${TEST_SINGLE_STEP} == "4" ]]; then
+	return 0
+fi
 
+if [[ -z ${TEST_SINGLE_STEP} ]] || [[ ${TEST_SINGLE_STEP} == "5" ]]; then
 echo "------------------------------------------"
 echo "step 5: cleaning up GCP test resources ... $(date)"
 SCRIPT=$(realpath -P ./kubemark-setup.sh)
 SCRIPTPATH=`dirname $SCRIPT`
 bash ${SCRIPTPATH}/gcp-cleanup.sh ${RUN_ID}
+fi
+if [[ ${TEST_SINGLE_STEP} == "5" ]]; then
+	return 0
+fi
+
+if [[ -z ${TEST_SINGLE_STEP} ]] || [[ ${TEST_SINGLE_STEP} == "6" ]]; then
 echo "------------------------------------------"
 echo "step 6: system has been cleaned up. Au revoir :) $(date)"
 
@@ -228,4 +256,8 @@ echo "step 6: system has been cleaned up. Au revoir :) $(date)"
 
 echo "local cleanup of kubemark-config files"
 rm test/kubemark/resources/kubeconfig.*
+fi
+if [[ ${TEST_SINGLE_STEP} == "6" ]]; then
+	return 0
+fi
 
