@@ -1,0 +1,57 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    group: saturation
+  name: saturation-deployment-0
+  namespace: __NODE__
+spec:
+  progressDeadlineSeconds: 600
+  replicas: 30
+  selector:
+    matchLabels:
+      name: saturation-deployment-0
+  strategy:
+    rollingUpdate:
+      maxSurge: 25%
+      maxUnavailable: 25%
+    type: RollingUpdate
+  template:
+    metadata:
+      labels:
+        group: saturation
+        name: saturation-deployment-0
+    spec:
+      nodeName: __NODE__
+      containers:
+      - image: k8s.gcr.io/pause:3.1
+        imagePullPolicy: IfNotPresent
+        name: saturation-pause-container
+        resources:
+          requests:
+            cpu: 1m
+            memory: 10M
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: File
+      dnsPolicy: ClusterFirst
+      restartPolicy: Always
+      schedulerName: default-scheduler
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoExecute
+        key: node.kubernetes.io/not-ready
+        operator: Exists
+        tolerationSeconds: 900
+      - effect: NoExecute
+        key: node.kubernetes.io/unreachable
+        operator: Exists
+        tolerationSeconds: 900
+      workloadInfo:
+      - image: k8s.gcr.io/pause:3.1
+        imagePullPolicy: IfNotPresent
+        name: saturation-deployment-0
+        resources:
+          requests:
+            cpu: 1m
+            memory: 10M
